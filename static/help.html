@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panduan Penggunaan - Daily Report Scheduler</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    code { font-family: 'Fira Code', 'Courier New', monospace; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 flex flex-col min-h-screen">
+
+  <!-- Top Navbar Header -->
+  <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="bg-blue-600 p-2 rounded-lg text-white">
+        <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold tracking-wide">Daily Report Scheduler</h1>
+        <p class="text-xs text-slate-400">Dokumentasi & Panduan Lengkap Fitur Aplikasi</p>
+      </div>
+    </div>
+    
+    <div class="flex items-center space-x-3">
+      <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+        <i class="fa-solid fa-xmark"></i> Tutup Tab
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="flex flex-1 max-w-7xl w-full mx-auto py-8 px-6 gap-8">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 flex-shrink-0">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sticky top-24">
+        <h3 class="font-bold text-gray-400 text-xs uppercase tracking-wider mb-3 px-3">Daftar Fitur & Modul</h3>
+        <nav class="space-y-1 text-sm font-medium">
+          <a href="#overview" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-house w-6 text-slate-400"></i> Ikhtisar Sistem
+          </a>
+          <a href="#connections" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-database w-6 text-slate-400"></i> Koneksi Database
+          </a>
+          <a href="#jobs-scheduler" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-calendar-check w-6 text-slate-400"></i> Manajemen Job & Cron
+          </a>
+          <a href="#node-types" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-diagram-project w-6 text-slate-400"></i> Tipe Langkah (Nodes)
+          </a>
+          <a href="#sql-params" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-code w-6 text-slate-400"></i> Parameter Dynamic SQL
+          </a>
+          <a href="#email-tpl" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-paper-plane w-6 text-slate-400"></i> Otomatisasi Email
+          </a>
+          <a href="#files-retention" class="flex items-center px-3 py-2 rounded-lg text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition">
+            <i class="fa-solid fa-file-csv w-6 text-slate-400"></i> Pengelolaan File & Log
+          </a>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- Content Body -->
+    <main class="flex-1 space-y-8">
+      
+      <!-- Overview Section -->
+      <section id="overview" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h2 class="text-2xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-book-open text-blue-600"></i> Ikhtisar Sistem Daily Report Scheduler
+        </h2>
+        <p class="text-gray-600 leading-relaxed text-sm mb-4">
+          Aplikasi <b>Daily Report Scheduler</b> digunakan untuk mengotomatisasi ekstraksi data, transformasi ETL ringan, pembuatan laporan dalam bentuk berkas Excel (.xlsx), hingga pengiriman berkas ke alamat email tujuan secara berkala berdasarkan penjadwalan CRON[cite: 1].
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <h4 class="font-bold text-slate-800 text-sm mb-1 flex items-center gap-2">
+              <i class="fa-solid fa-plug text-blue-500"></i> Multi-Database
+            </h4>
+            <p class="text-xs text-gray-500">Dukungan penuh ke Oracle (cLIent/Native), MySQL, dan SQL Server (MSSQL)[cite: 1].</p>
+          </div>
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <h4 class="font-bold text-slate-800 text-sm mb-1 flex items-center gap-2">
+              <i class="fa-solid fa-gears text-emerald-500"></i> Alur Kerja Terintegrasi
+            </h4>
+            <p class="text-xs text-gray-500">Mendukung eksekusi skrip Python, API Get, Stage DB, dan Export/Import CSV[cite: 1].</p>
+          </div>
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <h4 class="font-bold text-slate-800 text-sm mb-1 flex items-center gap-2">
+              <i class="fa-solid fa-envelope text-purple-500"></i> Distribusi Email
+            </h4>
+            <p class="text-xs text-gray-500">Kirim laporan Excel langsung via SMTP lengkap dengan perulangan log dan penanganan error[cite: 1].</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Database Connections -->
+      <section id="connections" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 class="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-database text-blue-600"></i> 1. Manajemen Koneksi Database
+        </h3>
+        <p class="text-gray-600 text-sm mb-4">
+          Koneksi dikonfigurasi pada menu <b>Connections</b>. Aplikasi mendukung validasi keamanan kueri agar secara bawaan hanya mengeksekusi perintah baca-saja (<code class="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">SELECT</code> / <code class="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">WITH</code>)[cite: 1].
+        </p>
+        
+        <div class="bg-amber-50 border-l-4 border-amber-400 p-4 rounded text-xs text-amber-800 mb-4">
+          <b>Keamanan Write Access:</b> Jika Anda bermaksud melakukan pengisian data staging atau manipulasi data melalui node <code class="bg-amber-100 font-mono px-1">db_write</code>, opsi <b>Allow Write</b> pada konfigurasi koneksi tersebut harus diaktifkan secara eksplisit[cite: 1].
+        </div>
+
+        <h4 class="font-semibold text-gray-800 text-sm mb-2">Parameter Utama Koneksi:</h4>
+        <ul class="list-disc list-inside space-y-1 text-xs text-gray-600">
+          <li><b>Tipe Database:</b> Pilih antara <code>oracle</code>, <code>mysql</code>, atau <code>mssql</code>[cite: 1].</li>
+          <li><b>Host & Port:</b> Port default standar (Oracle: 1521, MySQL: 3306, MSSQL: 1433)[cite: 1].</li>
+          <li><b>DSN (Oracle):</b> Dapat digunakan opsional jika tidak menggunakan kombinasi Host/Port/Service Name[cite: 1].</li>
+          <li><b>Test Connection:</b> Selalu tekan tombol ini sebelum menyimpan koneksi untuk memastikan autentikasi terverifikasi[cite: 1].</li>
+        </ul>
+      </section>
+
+      <!-- Jobs & Scheduler -->
+      <section id="jobs-scheduler" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 class="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-days text-blue-600"></i> 2. Membuat Job & Format Penjadwalan CRON
+        </h3>
+        <p class="text-gray-600 text-sm mb-4">
+          Setiap Job mewakili satu siklus pembuatan laporan yang berjalan otomatis berdasarkan format standar <b>CRON Expression</b> (5 segmen)[cite: 1]:
+        </p>
+
+        <div class="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-xs overflow-x-auto mb-4">
+          ┌───────────── Menit (0 - 59)<br>
+          │ ┌─────────── Jam (0 - 23)<br>
+          │ │ ┌───────── Hari dalam Bulan (1 - 31)<br>
+          │ │ │ ┌─────── Bulan (1 - 12)<br>
+          │ │ │ │ ┌───── Hari dalam Minggu (0 - 6) (Minggu=0)<br>
+          │ │ │ │ │<br>
+          * * * * *
+        </div>
+
+        <h4 class="font-semibold text-gray-800 text-sm mb-2">Contoh Jadwal Eksekusi:</h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div class="border p-2.5 rounded bg-gray-50"><code class="font-bold text-blue-600">0 7 * * *</code> : Berjalan setiap hari pukul 07:00 WIB[cite: 1].</div>
+          <div class="border p-2.5 rounded bg-gray-50"><code class="font-bold text-blue-600">30 8 * * 1-5</code> : Berjalan pukul 08:30 WIB setiap hari kerja (Senin-Jumat)[cite: 1].</div>
+        </div>
+      </section>
+
+      <!-- Query Steps & Node Types -->
+      <section id="node-types" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 class="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-diagram-project text-blue-600"></i> 3. Fitur & Tipe Langkah (Query Nodes)
+        </h3>
+        <p class="text-gray-600 text-sm mb-4">
+          Satu Job dapat berisi beberapa langkah (nodes) pemrosesan data[cite: 1]:
+        </p>
+
+        <div class="space-y-4">
+          <!-- SQL & Stage -->
+          <div class="border rounded-lg p-4 bg-gray-50">
+            <h4 class="font-bold text-sm text-gray-800 flex items-center gap-2">
+              <span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded">sql</span> / <span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded">stage</span> Ekstraksi Query
+            </h4>
+            <p class="text-xs text-gray-600 mt-1">
+              Mengeksekusi SQL SELECT dari database target. Tipe <code>stage</code> memungkinkan hasil query disimpan langsung ke tabel staging database tujuan[cite: 1].
+            </p>
+          </div>
+
+          <!-- Python Script -->
+          <div class="border rounded-lg p-4 bg-gray-50">
+            <h4 class="font-bold text-sm text-gray-800 flex items-center gap-2">
+              <span class="bg-purple-600 text-white text-xs px-2 py-0.5 rounded">py_script</span> Custom Python Execution
+            </h4>
+            <p class="text-xs text-gray-600 mt-1">
+              Menjalankan manipulasi data menggunakan Pandas/Numpy secara otomatis sebelum output dibuat[cite: 1].
+            </p>
+          </div>
+
+          <!-- DB Dump & Backup -->
+          <div class="border rounded-lg p-4 bg-gray-50">
+            <h4 class="font-bold text-sm text-gray-800 flex items-center gap-2">
+              <span class="bg-emerald-600 text-white text-xs px-2 py-0.5 rounded">db_dump</span> Utility Dump Database
+            </h4>
+            <p class="text-xs text-gray-600 mt-1">
+              Mengeksekusi backup/dump otomatis native utilitas database (seperti <code>mysqldump</code> atau <code>expdp</code>)[cite: 1].
+            </p>
+          </div>
+
+          <!-- API Get & CSV -->
+          <div class="border rounded-lg p-4 bg-gray-50">
+            <h4 class="font-bold text-sm text-gray-800 flex items-center gap-2">
+              <span class="bg-amber-600 text-white text-xs px-2 py-0.5 rounded">api_get</span> / <span class="bg-amber-600 text-white text-xs px-2 py-0.5 rounded">csv_export</span> Data Connector
+            </h4>
+            <p class="text-xs text-gray-600 mt-1">
+              Mengambil data dari REST API external atau mengimpor/mengeksport file CSV lokal ke pipeline job[cite: 1].
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SQL Params -->
+      <section id="sql-params" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 class="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-code text-blue-600"></i> 4. Sintaks Parameter Dinamis (<code class="text-red-500">sqlParam</code>)
+        </h3>
+        <p class="text-gray-600 text-sm mb-3">
+          Gunakan variabel <code class="bg-gray-100 font-mono text-red-600 px-1.5 py-0.5 rounded">sqlParam</code> pada SQL Anda. Sistem akan menggantinya sesuai <i>Date Mode</i> job (<code>today</code> / <code>yesterday</code>)[cite: 1]:
+        </p>
+
+        <div class="bg-slate-900 text-gray-100 p-4 rounded-lg font-mono text-xs overflow-x-auto mb-3">
+          <span class="text-gray-400">-- Query dengan tanggal dinamis harian:</span><br>
+          <span class="text-purple-400">SELECT</span> branch_code, SUM(amount) AS total_sales <br>
+          <span class="text-purple-400">FROM</span> transaction_logs <br>
+          <span class="text-purple-400">WHERE</span> trx_date <span class="text-yellow-400">sqlParam</span><br>
+          <span class="text-purple-400">GROUP BY</span> branch_code;
+        </div>
+
+        <h4 class="font-semibold text-gray-800 text-sm mb-2">Penerjemahan Otomatis oleh Engine:</h4>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div class="p-3 bg-gray-50 border rounded">
+            <b class="text-gray-700">Oracle DB</b>
+            <p class="font-mono text-blue-600 mt-1">= trunc(sysdate)</p>
+          </div>
+          <div class="p-3 bg-gray-50 border rounded">
+            <b class="text-gray-700">MySQL</b>
+            <p class="font-mono text-blue-600 mt-1">= curdate()</p>
+          </div>
+          <div class="p-3 bg-gray-50 border rounded">
+            <b class="text-gray-700">SQL Server (MSSQL)</b>
+            <p class="font-mono text-blue-600 mt-1">= cast(getdate() as date)</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Email Automation -->
+      <section id="email-tpl" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 class="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-paper-plane text-blue-600"></i> 5. Pengaturan Email & Dynamic Placeholder
+        </h3>
+        <p class="text-gray-600 text-sm mb-4">
+          Anda dapat menggunakan tag dinamis pada **Subject**, **Filename Template**, dan **Body Email HTML**[cite: 1]:
+        </p>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-4">
+          <div class="border rounded p-2.5 bg-gray-50">
+            <code class="font-bold text-blue-600">{tgl}</code>
+            <p class="text-gray-500 mt-1">25-Oct-26[cite: 1]</p>
+          </div>
+          <div class="border rounded p-2.5 bg-gray-50">
+            <code class="font-bold text-blue-600">{tgl_title}</code>
+            <p class="text-gray-500 mt-1">25-10-2026[cite: 1]</p>
+          </div>
+          <div class="border rounded p-2.5 bg-gray-50">
+            <code class="font-bold text-blue-600">{hari}</code>
+            <p class="text-gray-500 mt-1">Minggu[cite: 1]</p>
+          </div>
+          <div class="border rounded p-2.5 bg-gray-50">
+            <code class="font-bold text-blue-600">{tgl_long}</code>
+            <p class="text-gray-500 mt-1">25-Oct-2026[cite: 1]</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 border p-3 rounded-lg text-xs">
+          <b>Contoh Format Filename Template:</b><br>
+          <code class="text-blue-600 font-mono">laporan_penjualan_{tgl_title}</code> ➔ Hasil: <code>laporan_penjualan_25-10-2026.xlsx</code>[cite: 1]
+        </div>
+      </section>
+
+      <!-- Files & Retention -->
+      <section id="files-retention" class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 class="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-clock-history text-blue-600"></i> 6. Log Eksekusi & Pembersihan Berkas (Retention)
+        </h3>
+        <p class="text-gray-600 text-sm mb-3">
+          Sistem mencatat setiap riwayat eksekusi pada halaman <b>Run Logs</b>[cite: 1]. 
+        </p>
+        <ul class="list-disc list-inside space-y-2 text-xs text-gray-600">
+          <li><b>Fitur Re-send Email:</b> Jika terjadi kegagalan jaringan saat mengirim email, Anda dapat menekan tombol <i>Resend</i> pada baris log tanpa harus menjalankan ulang query[cite: 1].</li>
+          <li><b>Pembersihan Berkas Otomatis:</b> Berkas output laporan Excel disimpan di direktori server dan akan dibersihkan secara otomatis sesuai batasan <b>Retention Days</b> yang dikonfigurasi pada menu Settings (default: 30 hari)[cite: 1].</li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-gray-200 py-4 px-6 text-center text-xs text-gray-500">
+    Daily Report Scheduler &copy; 2026 Documentation | Didukung oleh FastAPI & Python 3.8[cite: 1].
+  </footer>
+
+</body>
+</html>

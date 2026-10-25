@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DC Report Scheduler</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+
+<!-- LOGIN -->
+<section class="login" v-if="!user">
+  <form class="panel" @submit.prevent="login">
+    <h1>DC Report Scheduler</h1>
+    <p class="muted">Masuk sebagai admin</p>
+    <div class="msg err" v-if="loginError">{{ loginError }}</div>
+    <div class="field"><label for="u">Username</label><input id="u" v-model.trim="loginForm.username" autocomplete="username" required></div>
+    <div class="field"><label for="p">Password</label><input id="p" type="password" v-model="loginForm.password" autocomplete="current-password" required></div>
+    <button class="primary" style="width:100%" :disabled="busy">Masuk</button>
+  </form>
+</section>
+
+<div class="shell" v-else>
+<aside>
+  <div class="brand">DC Report Scheduler<small>Laporan harian otomatis</small></div>
+  
+  <nav>
+    <button v-for="m in menu" :key="m.id" :class="{on: view===m.id || (m.id==='jobs' && view==='job')}" @click="go(m.id)">{{ m.label }}</button>
+  </nav>
+  <div class="who">
+    Login: <b>{{ user }}</b>
+    <button @click="openHelp" class="btn-help" title="Buka Panduan Aplikasi di Tab Baru">
+      <i class="fa-solid fa-circle-question"></i> Bantuan
+    </button>
+    <button @click="logout">Keluar</button>
+  </div>
+</aside>
+
+<main>
+<div class="msg err" v-if="error" @click="error=''">{{ error }}</div>
+<div class="msg ok" v-if="notice" @click="notice=''">{{ notice }}</div>
+
+<!-- CRONJOB LIST -->
+<section v-if="view==='jobs'">
+  <div class="head"><div><h1>Cronjob</h1><span class="muted">Pantau status, jalankan manual bila otomatis gagal.</span></div>
+    <button class="primary" @click="openJob(null)">+ Job baru</button></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Job</th><th>Jadwal</th><th>Berikutnya</th><th>Run terakhir</th><th>Aktif</th><th></th></tr></thead>
+    <tbody>
+      <tr v-for="j in jobs" :key="j.id">
+        <td><b>{{ j.name }}</b> <span class="tag" v-if="j.writes">tulis DB</span><div class="muted">{{ j.key }}</div></td>
+        <td class="mono">{{ j.cron }}</td>
+        <td>{{ j.enabled ? (j.next_run ? fmt(j.next_run) : '-') : 'nonaktif' }}</td>
+        <td>
+          <template v-if="j.last_run">
+            <span class="st" :class="j.last_run.status">{{ statusText[j.last_run.status] }}</span>
+            <div class="muted">{{ fmt(j.last_run.started_at) }}<span v-if="j.last_run.duration!==null"> · {{ j.last_run.duration }} dtk</span></div>
+            <div class="muted" v-if="j.last_run.email_status">email: {{ j.last_run.email_status }}</div>
+          </template><span class="muted" v-else>belum pernah</span>
+        </td>
+        <td><label class="check"><input type="checkbox" :checked="j.enabled" @change="toggleJob(j)"> {{ j.enabled ? 'ya' : 'tidak' }}</label></td>
+        <td><div class="actions">
+          <button class="primary" @click="error=''; runDlg={job:j,send_email:true,dry_run:true,date_from:'',date_to:''}" :disabled="j.last_run && j.last_run.status==='running'">Jalankan</button>
+          <button @click="openJob(j.id)">Ubah</button>
+          <button @click="openRuns(j.id)">Riwayat</button></div></td>
+      </tr>
+      <tr v-if="!jobs.length"><td colspan="6" class="muted">Belum ada job. Jalankan seed_from_config.py atau buat job baru.</td></tr>
+    </tbody></table></div>
+</section>
+
+<!-- JOB EDITOR -->
+<section v-if="view==='job' && jf">
+  <div class="head"><div><h1>{{ jf.id ? 'Ubah job' : 'Job baru' }}</h1><span class="muted">{{ jf.key }}</span></div>
+    <div class="actions"><button @click="go('jobs')">Batal</button>
+      <button class="danger" v-if="jf.id" @click="deleteJob">Hapus</button>
+      <button class="primary" @click="saveJob" :disabled="busy">Simpan</button></div></div>
+
+  <div class="panel"><h2>Umum</h2>
+    <div class="row">
+      <div class="field"><label>Nama job</label><input v-model="jf.name"></div>
+      <div class="field"><label>Jadwal (cron: menit jam tgl bulan hari-minggu)</label><input class="mono" v-model="jf.cron" placeholder="0 7 * * *">
+        <div class="hint">Contoh: <span class="mono">0 7 * * 1-6</span> = 07:00 Senin–Sabtu. Zona waktu server aplikasi.</div></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Rentang data</label><select v-model="jf.date_mode">
+        <option value="today">Hari ini</option><option value="yesterday">Kemarin (Senin: Sabtu+Minggu)</option></select>
+        <div class="hint">Di SQL / URL API / SQL bebas: <span class="mono">{tgl_awal} {tgl_akhir}</span> (2026-10-17) dan <span class="mono">{tgl_awal_compact} {tgl_akhir_compact}</span> (20261017); di email &amp; nama file: <span class="mono">{hari} {tgl} {tgl_long}</span>. Semua mengikuti rentang ini atau tanggal manual saat Jalankan.</div></div>
+      <div class="field"><label>Layout Excel</label><select v-model="jf.layout">
+        <option value="standard">Standar (1 query = 1 sheet)</option><option value="summary_order">Summary Order (sheet ringkasan + rumus)</option></select>
+        <div class="hint" v-if="jf.layout==='summary_order'">Urutan query harus: 1 Dry, 2 Fresh, 3 Plan Delivery, 4 PO Booking.</div></div>
+    </div>
+    <label class="check"><input type="checkbox" v-model="jf.enabled"> Aktifkan jadwal otomatis</label>
+  </div>
+
+  <div class="panel"><h2>Email</h2>
+    <label class="check" style="margin-bottom:12px"><input type="checkbox" v-model="jf.email_enabled"> Kirim email setelah file dibuat</label>
+    <div class="row">
+      <div class="field"><label>To (pisahkan dengan koma)</label><textarea rows="3" v-model="jf.email_to"></textarea></div>
+      <div class="field"><label>CC</label><textarea rows="3" v-model="jf.email_cc"></textarea></div>
+    </div>
+    <div class="field"><label>Subject</label><input v-model="jf.subject"></div>
+    <div class="field"><label>Isi email (HTML)</label><textarea rows="6" v-model="jf.body_html"></textarea></div>
+    <div class="field"><label>Nama file (tanpa .xlsx)</label><input class="mono" v-model="jf.filename_tpl">
+      <div class="hint">Variabel: <span class="mono">{hari} {tgl} {tgl_long}</span> — contoh {tgl}=16-Oct-26. Berlaku di subject, isi email, dan nama file.</div></div>
+  </div>
+
+  <div class="panel"><div class="head" style="margin-bottom:8px"><div><h2 style="margin:0">Alur node</h2><span class="muted">Dijalankan berurutan dari atas ke bawah.</span></div><button @click="addQuery">+ Node</button></div>
+    <div class="query" v-for="(q,i) in jf.queries" :key="i">
+      <div class="top"><b>#{{ i+1 }} {{ q.name || '(tanpa nama)' }} <span class="tag">{{ kindText[q.kind] }}</span></b>
+        <div class="actions"><button class="link" @click="moveQuery(i,-1)" :disabled="i===0">naik</button>
+          <button class="link" @click="moveQuery(i,1)" :disabled="i===jf.queries.length-1">turun</button>
+          <button class="link danger" @click="jf.queries.splice(i,1)">hapus</button></div></div>
+      <div class="row">
+        <div class="field"><label>Jenis node</label><select v-model="q.kind" @change="kindChanged(q)">
+          <option value="sql">Get Data — query SQL</option>
+          <option value="api_get">Get Data — dari API (JSON)</option>
+          <option value="join">Join (pilih kolom, inner / left / right, output satu atau terpisah)</option>
+          <option value="pivot">Pivot</option>
+          <option value="py_script">Skrip Python (pandas / numpy)</option>
+          <option value="db_dump">Dump database (mysqldump / expdp)</option>
+          <option v-if="q.kind==='compare'" value="compare" disabled>Bandingkan (sudah dihapus: hapus node ini)</option>
+          <option value="stage">Simpan hasil ke database (staging, data besar)</option>
+          <option value="csv_export">Export ke CSV</option><option value="csv_import">Import / baca CSV</option>
+          <option value="db_write">Tulis ke database (insert / update / upsert / SQL)</option></select></div>
+        <div class="field"><label>Nama node</label><input v-model="q.name"></div>
+        <div class="field" v-if="q.is_output && jf.layout==='standard'"><label>Nama sheet</label><input maxlength="31" v-model="q.sheet_name"></div>
+      </div>
+      <label class="check" style="margin-bottom:10px" v-if="!(q.kind==='csv_export' || q.kind==='csv_import' || (q.kind==='sql' && q.config.stream))"><input type="checkbox" v-model="q.is_output"> Jadikan sheet di Excel (matikan untuk node pembantu)</label>
+
+      <template v-if="q.kind==='sql' || q.kind==='stage'">
+        <div class="row">
+          <div class="field"><label>Koneksi database (sumber data)</label><select v-model="q.connection_id"><option :value="null">- pilih -</option>
+            <option v-for="c in conns" :value="c.id">{{ c.name }} ({{ c.db_type }})</option></select></div>
+          <div class="field"><label>Parameter <span class="mono">sqlParam</span></label><select v-model="q.param_mode">
+            <option value="none">Tidak ada</option><option value="date">Tanggal (sesuai rentang data)</option><option value="list">Daftar dari node sebelumnya</option></select></div>
+          <template v-if="q.param_mode==='list'">
+            <div class="field"><label>Sumber</label><select v-model="q.param_source_position"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.param_source_position)">Kolom: {{ colsOf(q.param_source_position).join(', ') }}</div></div>
+            <div class="field"><label>Kolom</label><input v-model="q.param_source_column" placeholder="no_po"></div>
+          </template>
+        </div>
+        <div class="row" v-if="q.kind==='stage'">
+          <div class="field"><label>Database tujuan staging</label><select v-model="q.config.target_connection_id"><option :value="null">- pilih -</option>
+            <option v-for="c in conns" :value="c.id">{{ c.name }} ({{ c.db_type }})</option></select></div>
+          <div class="field"><label>Nama tabel staging</label><input class="mono" v-model="q.config.table" placeholder="STG_NAMA">
+            <div class="hint">Wajib diawali STG_. Tabel dibuat ulang (DROP + CREATE) setiap run; akun tujuan butuh hak CREATE/DROP/INSERT.
+              Pakai nama berbeda untuk tiap job.</div></div>
+        </div>
+        <label class="check" v-if="q.kind==='sql'" style="margin-bottom:10px"><input type="checkbox" v-model="q.config.stream" @change="q.config.stream && (q.is_output = false)">
+          Mode stream (data sangat besar, &gt; 1 juta baris): hasil tidak ditampung di memori dan hanya bisa dipakai node Export CSV / Tulis ke database</label>
+        <div class="field"><label>SQL (hanya SELECT / WITH). Variabel tanggal: {tgl_awal} {tgl_akhir} {tgl_awal_compact} {tgl_akhir_compact}</label><textarea rows="10" spellcheck="false" v-model="q.sql"></textarea></div>
+        <button @click="previewQuery(q)" :disabled="!q.connection_id || q._loading">{{ q._loading ? 'Menjalankan…' : 'Uji query (20 baris)' }}</button>
+        <div class="msg err" style="margin-top:8px" v-if="q._error">{{ q._error }}</div>
+        <div class="tablewrap" style="margin-top:8px;max-height:260px" v-if="q._preview"><table>
+          <thead><tr><th v-for="c in q._preview.columns">{{ c }}</th></tr></thead>
+          <tbody><tr v-for="r in q._preview.rows"><td v-for="v in r">{{ v }}</td></tr></tbody></table></div>
+      </template>
+
+      <template v-else-if="q.kind==='join'">
+        <div class="row"><div class="field"><label>Data kiri</label><select v-model="q.config.left"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.config.left)">Kolom: {{ colsOf(q.config.left).join(', ') }}</div></div><div class="field"><label>Data kanan</label><select v-model="q.config.right"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.config.right)">Kolom: {{ colsOf(q.config.right).join(', ') }}</div></div></div>
+        <div class="row">
+          <div class="field"><label>Output</label><select v-model="q.config.output"><option value="single">Satu hasil (sesuai jenis join)</option>
+            <option value="split">Terpisah: cocok / hanya kiri / hanya kanan</option></select></div>
+          <div class="field" v-if="q.config.output!=='split'"><label>Jenis join</label><select v-model="q.config.join_type">
+            <option value="inner">Inner (hanya yang cocok)</option><option value="left">Left (semua baris kiri)</option>
+            <option value="right">Right (semua baris kanan)</option><option value="outer">Full outer (semua baris)</option></select></div>
+          <div class="field"><label>Batas baris sumber</label><input type="number" min="1" v-model.number="q.config.max_rows"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Kolom kunci kiri (pisahkan koma; boleh lebih dari satu)</label><input v-model="q.config.left_on" placeholder="po"></div>
+          <div class="field"><label>Kolom kunci kanan (kosong = sama dengan kiri)</label><input v-model="q.config.right_on"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Kolom yang diambil dari kiri (kosong = semua)</label><input v-model="q.config.left_cols" placeholder="po, vendor, qty"></div>
+          <div class="field"><label>Kolom yang diambil dari kanan (kosong = semua kecuali kunci)</label><input v-model="q.config.right_cols" placeholder="harga, status"></div>
+        </div>
+        <label class="check" v-if="q.config.output==='split'"><input type="checkbox" v-model="q.config.sheet_extra"> Buat juga sheet untuk "hanya kiri" dan "hanya kanan"</label>
+        <div class="hint">Nama kolom kanan yang sama dengan kolom kiri diberi akhiran _B. Kunci dicocokkan tanpa memperhatikan tipe (1 = 1.0 = '1'); nilai kosong (NULL) tidak pernah cocok.
+          Pada output terpisah, node berikutnya memilih salah satu dari tiga hasil lewat daftar "Data sumber".</div>
+      </template>
+
+      <template v-else-if="q.kind==='pivot'">
+        <div class="row"><div class="field"><label>Data sumber</label><select v-model="q.config.source"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.config.source)">Kolom: {{ colsOf(q.config.source).join(', ') }}</div></div>
+          <div class="field"><label>Batas baris sumber</label><input type="number" min="1" v-model.number="q.config.max_rows"></div></div>
+        <div class="row"><div class="field"><label>Kolom baris / pengelompokan (pisahkan koma)</label><input v-model="q.config.index"></div>
+          <div class="field"><label>Kolom header (opsional; kosong = ringkasan tanpa tabel silang)</label><input v-model="q.config.column"></div></div>
+        <div class="field"><label>Kolom nilai dan fungsinya (setiap kolom punya fungsi sendiri)</label>
+          <div class="row" v-for="(v,n) in q.config.values" :key="n" style="align-items:flex-end;margin-bottom:6px">
+            <div class="field" style="margin:0"><input v-model="v.column" placeholder="nama kolom"></div>
+            <div class="field" style="margin:0;flex:0 0 230px"><select v-model="v.agg"><option value="sum">Sum (jumlah)</option><option value="avg">Avg (rata-rata)</option><option value="min">Min</option><option value="max">Max</option><option value="count">Count (jumlah baris)</option><option value="count_distinct">Count distinct</option><option value="first">Pertama</option><option value="concat">Gabung teks (, )</option></select></div>
+            <button class="link danger" @click="q.config.values.splice(n,1)" :disabled="q.config.values.length<=1">hapus</button></div>
+          <button class="link" @click="q.config.values.push({column:'',agg:'sum'})">+ Kolom nilai</button></div>
+        <label class="check" v-if="q.config.column"><input type="checkbox" v-model="q.config.total"> Tambahkan kolom Total (satu per kolom nilai)</label>
+        <div class="hint">Sum, Avg, Min, Max butuh kolom angka. Dengan lebih dari satu kolom nilai, nama kolom hasil berbentuk "header - kolom (fungsi)".</div>
+      </template>
+
+      <template v-else-if="q.kind==='py_script'">
+        <div class="msg err" style="margin-bottom:10px" v-if="features && !features.python_scripts">Node ini dinonaktifkan di server. Pemilik server harus menyetel
+          <span class="mono">ENABLE_PYTHON_SCRIPTS=1</span>, memasang pandas dan numpy (<span class="mono">pip install -r requirements-scripting.txt</span>), lalu restart aplikasi.</div>
+        <div class="msg err" style="margin-bottom:10px" v-else-if="features && (!features.pandas || !features.numpy)">pandas / numpy belum terpasang di server: <span class="mono">pip install -r requirements-scripting.txt</span></div>
+        <div class="hint" style="margin-bottom:10px">Skrip berjalan sebagai kode Python penuh di server aplikasi (proses terpisah, ada batas waktu). Ini bukan sandbox: gunakan hanya oleh admin tepercaya.</div>
+        <div class="field"><label>Input (tiap input menjadi DataFrame: inputs[0], inputs[1], ...; df = input pertama)</label>
+          <div class="row" v-for="(r,n) in q.config.inputs" :key="n" style="align-items:center;margin-bottom:6px;flex-wrap:nowrap">
+            <div class="field" style="margin:0;flex:1"><select v-model="q.config.inputs[n]"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select></div>
+            <button class="link danger" @click="q.config.inputs.splice(n,1)">hapus</button></div>
+          <button class="link" @click="q.config.inputs.push(null)">+ Tambah input</button></div>
+        <div class="row"><div class="field"><label>Port tambahan (nama, pisahkan koma; diisi lewat extra["nama"])</label><input class="mono" v-model="q.config.extra_ports" placeholder="besar, ringkas"></div>
+          <div class="field"><label>Timeout (detik)</label><input type="number" min="1" max="3600" v-model.number="q.config.timeout"></div>
+          <div class="field"><label>Batas baris</label><input type="number" min="1" v-model.number="q.config.max_rows"></div></div>
+        <label class="check" style="margin-bottom:10px" v-if="q.config.extra_ports"><input type="checkbox" v-model="q.config.sheet_extra"> Buat juga sheet untuk port tambahan</label>
+        <div class="field"><label>Skrip Python</label><textarea rows="14" spellcheck="false" v-model="q.config.script"></textarea></div>
+        <div class="hint">Tersedia: <span class="mono">pd</span> (pandas), <span class="mono">np</span> (numpy), <span class="mono">df</span>, <span class="mono">inputs</span>, <span class="mono">params</span>
+          (tgl_awal, tgl_akhir, tgl_awal_compact, tgl_akhir_compact, hari, tgl, tgl_long, dry_run). Wajib mengisi <span class="mono">result</span> (DataFrame);
+          opsional <span class="mono">extra = {"nama": DataFrame}</span>. Hasil <span class="mono">print()</span> masuk ke log run. Tidak ada tombol uji: jalankan job (dry-run) untuk mencoba.</div>
+      </template>
+
+      <template v-else-if="q.kind==='db_dump'">
+        <div class="row">
+          <div class="field"><label>Koneksi database</label><select v-model="q.connection_id" @change="dumpDefaults(q)"><option :value="null">- pilih -</option>
+            <option v-for="c in conns" :value="c.id">{{ c.name }} ({{ c.db_type }})</option></select></div>
+          <div class="field"><label>Nama file (tanpa ekstensi; boleh {tgl})</label><input class="mono" v-model="q.config.filename"></div>
+          <div class="field"><label>Timeout (detik)</label><input type="number" min="1" v-model.number="q.config.timeout"></div>
+        </div>
+        <div class="msg err" style="margin-bottom:10px" v-if="q.connection_id && !dumpInfo(q)">Dump hanya tersedia untuk MySQL (mysqldump) dan Oracle (expdp). Untuk SQL Server gunakan node Export ke CSV.</div>
+        <template v-if="dumpInfo(q)">
+          <div class="hint" style="margin-bottom:10px">Alat: <span class="mono">{{ dumpInfo(q).tool }}</span>
+            <span v-if="features && features[dumpInfo(q).tool] === false"> — tidak ditemukan di server aplikasi (pasang klien database, atau setel MYSQLDUMP_PATH / EXPDP_PATH).</span>
+            <span v-if="dumpType(q)==='mysql'"> Hasil: file .sql di folder CSV aplikasi (menu File).</span>
+            <span v-else> Hasil: file .dmp di server database (folder directory object), bukan di server aplikasi.</span></div>
+          <label class="check" style="margin-bottom:10px" v-if="dumpType(q)==='mysql'"><input type="checkbox" v-model="q.config.compress"> Kompres hasil dengan gzip (.sql.gz)</label>
+          <div class="field"><label>Tabel (satu per baris; kosong = seluruh {{ dumpType(q)==='mysql' ? 'database' : 'skema (wajib aktifkan opsi skema)' }})</label>
+            <textarea rows="4" class="mono" v-model="q.config.tables" placeholder="orders&#10;order_items"></textarea>
+            <div class="actions" style="margin-top:6px"><button @click="loadTables(q)" :disabled="!q.connection_id || q._loading">{{ q._loading ? 'Memuat…' : 'Pilih dari daftar tabel database' }}</button></div>
+            <div class="msg err" style="margin-top:8px" v-if="q._error">{{ q._error }}</div>
+            <div v-if="q._tables" style="margin-top:8px"><input v-model="q._filter" placeholder="Cari tabel…" style="margin-bottom:6px">
+              <div class="tablewrap" style="max-height:200px;overflow:auto;padding:8px">
+                <label class="check" v-for="t in filteredTables(q)" :key="t"><input type="checkbox" :checked="hasTable(q,t)" @change="toggleTable(q,t)"> {{ t }}</label>
+                <span class="muted" v-if="!filteredTables(q).length">Tidak ada tabel yang cocok.</span></div></div></div>
+          <div class="field"><label>Opsi perintah {{ dumpInfo(q).tool }}</label>
+            <div class="optgrid">
+              <template v-for="o in dumpInfo(q).options" :key="o.key">
+                <label class="check" v-if="o.type==='flag'"><input type="checkbox" v-model="q.config.options[o.key]"> <span>{{ o.label }} <span class="mono muted">{{ o.flag }}</span></span></label>
+                <div class="field" style="margin:0" v-else-if="o.type==='choice'"><label>{{ o.label }} <span class="mono">{{ o.flag }}</span></label>
+                  <select v-model="q.config.options[o.key]"><option value="">(bawaan)</option><option v-for="c in o.choices" :value="c">{{ c }}</option></select></div>
+                <div class="field" style="margin:0" v-else><label>{{ o.label }} <span class="mono">{{ o.flag }}</span></label><input v-model="q.config.options[o.key]" :placeholder="o.hint">
+                  <div class="hint" v-if="o.hint && o.required">{{ o.hint }}</div></div>
+              </template></div></div>
+          <button @click="previewDump(q)" :disabled="!q.connection_id || q._loading">Lihat perintah</button>
+          <pre class="log" style="margin-top:8px" v-if="q._cmd">{{ q._cmd }}</pre>
+          <div class="hint">Password tidak ditaruh di argumen perintah (MySQL lewat variabel lingkungan, Oracle lewat parfile sementara) dan disamarkan di tampilan. Dry-run hanya menampilkan perintah.
+            Profil Oracle (expdp) belum diuji terhadap server Oracle sungguhan; periksa perintah di atas sebelum dipakai. SQL Server tidak didukung.</div>
+        </template>
+      </template>
+
+      <template v-else-if="q.kind==='db_write'">
+        <div class="msg err" style="margin-bottom:10px">Node ini MENGUBAH data di database tujuan. Coba dulu dengan dry-run (tombol Jalankan), lalu aktifkan jadwalnya.</div>
+        <div class="row"><div class="field"><label>Data sumber</label><select v-model="q.config.source"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.config.source)">Kolom: {{ colsOf(q.config.source).join(', ') }}</div></div>
+          <div class="field"><label>Database tujuan</label><select v-model="q.config.target_connection_id"><option :value="null">- pilih -</option>
+            <option v-for="c in conns" :value="c.id" :disabled="!c.allow_write">{{ c.name }} ({{ c.db_type }}){{ c.allow_write ? '' : ' — belum boleh tulis' }}</option></select>
+            <div class="hint">Centang "Izinkan penulisan" pada koneksi di menu Koneksi database.</div></div>
+          <div class="field"><label>Mode</label><select v-model="q.config.mode"><option value="insert">Insert</option><option value="update">Update</option>
+            <option value="upsert">Upsert (update jika ada, insert jika belum)</option><option value="custom">SQL bebas (INSERT / UPDATE / MERGE)</option></select></div>
+        </div>
+        <div class="field" style="max-width:340px"><label>Commit tiap N baris (kosong = commit di akhir)</label><input type="number" min="0" v-model.number="q.config.commit_every">
+          <div class="hint">Untuk sumber stream/CSV besar, misalnya 50000. Batas baris di bawah hanya berlaku untuk data di memori. Data yang sudah di-commit
+            tidak ikut di-rollback bila node gagal di tengah, jadi pakai upsert agar aman diulang. Dry-run hanya menulis 1000 baris pertama lalu rollback.</div></div>
+        <template v-if="q.config.mode!=='custom'">
+          <div class="row">
+            <div class="field"><label>Tabel tujuan</label><input class="mono" v-model="q.config.table" placeholder="schema.nama_tabel"></div>
+            <div class="field"><label>Batas baris</label><input type="number" min="1" v-model.number="q.config.max_rows"></div></div>
+          <div class="row">
+            <div class="field" v-if="q.config.mode==='update' || q.config.mode==='upsert'"><label>Kolom kunci (pencocokan / WHERE)</label>
+              <textarea rows="3" v-model="q.config.keys" placeholder="id=po_id"></textarea></div>
+            <div class="field"><label>{{ q.config.mode==='insert' ? 'Kolom yang diisi' : 'Kolom yang diubah (SET)' }}</label>
+              <textarea rows="3" v-model="q.config.set" placeholder="status=status_baru, qty"></textarea></div></div>
+          <div class="hint">Format: <span class="mono">kolom_tabel=kolom_data</span>, pisahkan koma atau baris baru. Tanpa "=" berarti nama kolomnya sama.
+            Upsert di MySQL membutuhkan PRIMARY KEY / UNIQUE pada kolom kunci.</div>
+        </template>
+        <template v-else>
+          <div class="field"><label>SQL bebas</label><textarea rows="6" spellcheck="false" v-model="q.sql"
+            placeholder="UPDATE tabel SET status = :status WHERE id = :id AND tgl = to_date('{tgl_awal}','YYYY-MM-DD')"></textarea>
+            <div class="hint">Tulis <span class="mono">:nama_kolom</span> untuk memakai nilai dari data sumber (dijalankan per baris sebagai bind parameter). Hanya satu statement INSERT / UPDATE / MERGE.
+              Pastikan UPDATE punya WHERE.</div></div>
+          <div class="field" style="max-width:200px"><label>Batas baris</label><input type="number" min="1" v-model.number="q.config.max_rows"></div>
+        </template>
+      </template>
+
+      <template v-else-if="q.kind==='api_get'">
+        <div class="row"><div class="field" style="flex:3"><label>URL (boleh memakai {tgl_awal} {tgl_akhir} {page} {offset} {limit})</label>
+            <input class="mono" v-model="q.config.url" placeholder="https://host/api/items?from={tgl_awal}&to={tgl_akhir}"></div>
+          <div class="field" style="flex:0 0 120px"><label>Method</label><select v-model="q.config.method"><option>GET</option><option>POST</option></select></div></div>
+        <div class="row"><div class="field"><label>Autentikasi</label><select v-model="q.config.auth"><option value="none">Tanpa</option><option value="bearer">Bearer token</option>
+            <option value="basic">Basic (user + password)</option><option value="apikey">API key di header</option></select></div>
+          <div class="field" v-if="q.config.auth==='bearer'"><label>Token</label><input type="password" autocomplete="new-password" v-model="q.config.token" :placeholder="q.config.token_set ? '(tidak diubah)' : ''"></div>
+          <template v-if="q.config.auth==='basic'"><div class="field"><label>User</label><input v-model="q.config.basic_user" autocomplete="off"></div>
+            <div class="field"><label>Password</label><input type="password" autocomplete="new-password" v-model="q.config.password" :placeholder="q.config.password_set ? '(tidak diubah)' : ''"></div></template>
+          <template v-if="q.config.auth==='apikey'"><div class="field"><label>Nama header</label><input v-model="q.config.apikey_name" placeholder="X-API-Key"></div>
+            <div class="field"><label>Nilai</label><input type="password" autocomplete="new-password" v-model="q.config.apikey_value" :placeholder="q.config.apikey_set ? '(tidak diubah)' : ''"></div></template></div>
+        <div class="field"><label>Header tambahan (satu per baris: Nama: nilai). Jangan taruh rahasia di sini, pakai kolom autentikasi.</label><textarea rows="2" v-model="q.config.headers"></textarea></div>
+        <div class="field" v-if="q.config.method==='POST'"><label>Body (JSON)</label><textarea rows="4" spellcheck="false" v-model="q.config.body"></textarea></div>
+        <div class="row"><div class="field"><label>Path data di respons (kosong = array di akar)</label><input class="mono" v-model="q.config.records_path" placeholder="data.items"></div>
+          <div class="field"><label>Kolom (opsional, satu per baris: nama=path.ke.nilai; kosong = semua kolom diratakan)</label><textarea rows="2" v-model="q.config.columns"></textarea></div></div>
+        <div class="row"><div class="field"><label>Pagination</label><select v-model="q.config.pagination"><option value="none">Tanpa</option><option value="page">Nomor halaman ({page})</option>
+            <option value="offset">Offset ({offset})</option><option value="next_url">URL halaman berikutnya dari respons</option></select></div>
+          <template v-if="q.config.pagination==='page' || q.config.pagination==='offset'"><div class="field"><label>Ukuran halaman ({limit})</label><input type="number" min="1" v-model.number="q.config.page_size"></div></template>
+          <div class="field" v-if="q.config.pagination==='page'"><label>Halaman awal</label><input type="number" min="0" v-model.number="q.config.start_page"></div>
+          <div class="field" v-if="q.config.pagination==='next_url'"><label>Path 'next url' di respons</label><input class="mono" v-model="q.config.next_path" placeholder="links.next"></div>
+          <div class="field"><label>Maks halaman</label><input type="number" min="1" v-model.number="q.config.max_pages"></div>
+          <div class="field"><label>Batas baris</label><input type="number" min="1" v-model.number="q.config.max_rows"></div></div>
+        <label class="check" style="margin-bottom:10px"><input type="checkbox" v-model="q.config.verify_ssl"> Verifikasi sertifikat SSL (matikan hanya untuk API internal bersertifikat sendiri)</label>
+        <button @click="previewApi(q)" :disabled="!q.config.url || q._loading">{{ q._loading ? 'Menghubungi API…' : 'Uji API (1 halaman, 20 baris)' }}</button>
+        <div class="msg err" style="margin-top:8px" v-if="q._error">{{ q._error }}</div>
+        <div class="tablewrap" style="margin-top:8px;max-height:260px" v-if="q._preview"><table>
+          <thead><tr><th v-for="c in q._preview.columns">{{ c }}</th></tr></thead>
+          <tbody><tr v-for="r in q._preview.rows"><td v-for="v in r">{{ v }}</td></tr></tbody></table></div>
+        <div class="hint">Respons harus JSON. Data dimuat di memori (dibatasi "Batas baris"); untuk data lebih besar persempit rentang tanggal di URL atau pecah per halaman.</div>
+      </template>
+
+      <template v-else-if="q.kind==='csv_export'">
+        <div class="row"><div class="field"><label>Data sumber</label><select v-model="q.config.source"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.config.source)">Kolom: {{ colsOf(q.config.source).join(', ') }}</div></div>
+          <div class="field"><label>Nama file CSV</label><input class="mono" v-model="q.config.filename" placeholder="migrasi_tabel_x"></div></div>
+        <div class="row"><div class="field"><label>Pemisah</label><select v-model="q.config.delimiter"><option value=",">Koma ( , )</option><option value=";">Titik koma ( ; )</option>
+            <option value="tab">Tab</option><option value="|">Garis tegak ( | )</option></select></div>
+          <div class="field"><label>Encoding</label><select v-model="q.config.encoding"><option>utf-8</option><option>utf-8-sig</option><option>latin-1</option><option>cp1252</option></select></div></div>
+        <label class="check"><input type="checkbox" v-model="q.config.header"> Tulis baris header</label>
+        <div class="hint">File disimpan di folder CSV aplikasi (exports/&lt;kode job&gt;/) dan dihapus otomatis setelah masa simpan. Sumber sebaiknya node Get Data mode stream
+          agar tidak ditampung di memori (cocok untuk &gt; 1 juta baris). Nilai kosong (NULL) ditulis sebagai kolom kosong; tipe kolom dicatat di file .meta.json supaya
+          Import CSV mengembalikan angka dan tanggal. Dry-run hanya mengekspor 1000 baris pertama ke file .dryrun.csv.</div>
+      </template>
+
+      <template v-else-if="q.kind==='csv_import'">
+        <div class="row"><div class="field"><label>Dari node Export CSV (opsional)</label><select v-model="q.config.source"><option :value="null">- pilih -</option><template v-for="(s,k) in jf.queries" :key="k"><template v-if="k<i"><option :value="k">#{{ k+1 }} {{ s.name }}{{ s.kind==='join' && s.config.output==='split' ? ' — cocok' : '' }}</option><template v-if="s.kind==='join' && s.config.output==='split'"><option :value="k+':left_only'">#{{ k+1 }} {{ s.name }} — hanya kiri</option><option :value="k+':right_only'">#{{ k+1 }} {{ s.name }} — hanya kanan</option></template><template v-if="s.kind==='py_script'"><option v-for="nm in portNames(s)" :value="k+':'+nm">#{{ k+1 }} {{ s.name }} — {{ nm }}</option></template></template></template></select><div class="hint" v-if="colsOf(q.config.source)">Kolom: {{ colsOf(q.config.source).join(', ') }}</div></div>
+          <div class="field"><label>atau file CSV di folder aplikasi</label><select v-model="q.config.file"><option value="">- pilih -</option>
+              <option v-for="f in csvFiles" :value="f.path">{{ f.path }} ({{ (f.size/1048576).toFixed(1) }} MB)</option></select>
+            <div class="hint">Unggah file baru: <input type="file" accept=".csv,text/csv" @change="uploadCsv($event, q)"></div></div></div>
+        <div class="row"><div class="field"><label>Pemisah (file tanpa .meta.json)</label><select v-model="q.config.delimiter"><option value=",">Koma ( , )</option><option value=";">Titik koma ( ; )</option>
+            <option value="tab">Tab</option><option value="|">Garis tegak ( | )</option></select></div>
+          <div class="field"><label>Encoding</label><select v-model="q.config.encoding"><option>utf-8</option><option>utf-8-sig</option><option>latin-1</option><option>cp1252</option></select></div></div>
+        <div class="field"><label>Tipe kolom (opsional; kolom=int|num|str|date|ts, boleh dengan format: tgl=date:%d/%m/%Y)</label><textarea rows="3" class="mono" v-model="q.config.types" placeholder="qty=int&#10;harga=num&#10;tgl=date:%d/%m/%Y"></textarea></div>
+        <label class="check"><input type="checkbox" v-model="q.config.empty_as_null"> Kolom kosong dianggap NULL</label>
+        <div class="hint">File hasil Export CSV dibaca otomatis lengkap dengan tipenya. Untuk file dari luar, tanpa tipe semua kolom dibaca sebagai teks (database akan mengonversi sendiri).
+          File dibaca bertahap sehingga ukurannya tidak dibatasi memori.</div>
+      </template>
+    </div>
+    <p class="muted" v-if="!jf.queries.length">Belum ada node.</p>
+  </div>
+</section>
+
+<!-- FILES -->
+<section v-if="view==='files'">
+  <div class="head"><div><h1>File</h1><span class="muted">File CSV (upload dan hasil export) serta hasil dump database di folder CSV aplikasi.</span></div></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>File</th><th>Ukuran</th><th>Diubah</th><th></th></tr></thead>
+    <tbody><tr v-for="f in files" :key="f.path"><td class="mono">{{ f.path }}</td><td>{{ (f.size/1048576).toFixed(2) }} MB</td><td>{{ new Date(f.modified*1000).toLocaleString() }}</td>
+      <td><div class="actions"><a :href="'/api/files/download?path=' + encodeURIComponent(f.path)"><button>Unduh</button></a><button class="danger" @click="deleteFile(f)">Hapus</button></div></td></tr>
+      <tr v-if="!files.length"><td colspan="4" class="muted">Belum ada file.</td></tr></tbody></table></div>
+</section>
+
+<!-- RUNS -->
+<section v-if="view==='runs'">
+  <div class="head"><div><h1>Riwayat run</h1></div>
+    <select style="width:240px" v-model.number="runFilter" @change="loadRuns"><option :value="0">Semua job</option>
+      <option v-for="j in jobs" :value="j.id">{{ j.name }}</option></select></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Waktu</th><th>Job</th><th>Pemicu</th><th>Status</th><th>Email</th><th>Error</th></tr></thead>
+    <tbody><tr class="click" v-for="r in runs" :key="r.id" @click="openRun(r.id)">
+      <td>{{ fmt(r.started_at) }}</td><td>{{ r.job_name }}</td>
+      <td>{{ r.trigger==='manual' ? 'manual (' + r.triggered_by + ')' : 'jadwal' }}</td>
+      <td><span class="st" :class="r.status">{{ statusText[r.status] }}</span> <span class="tag" v-if="r.dry_run">dry-run</span></td>
+      <td>{{ r.email_status || '-' }}</td><td class="muted">{{ (r.error||'').slice(0,90) }}</td></tr>
+      <tr v-if="!runs.length"><td colspan="6" class="muted">Belum ada riwayat.</td></tr></tbody></table></div>
+</section>
+
+<!-- CONNECTIONS -->
+<section v-if="view==='conns'">
+  <div class="head"><div><h1>Koneksi database</h1><span class="muted">Oracle, MySQL, SQL Server. Password disimpan terenkripsi.</span></div>
+    <button class="primary" @click="cf=newConn()">+ Koneksi</button></div>
+  <div class="panel" v-if="cf">
+    <h2>{{ cf.id ? 'Ubah koneksi' : 'Koneksi baru' }}</h2>
+    <div class="row">
+      <div class="field"><label>Nama</label><input v-model="cf.name"></div>
+      <div class="field"><label>Tipe</label><select v-model="cf.db_type"><option value="oracle">Oracle</option><option value="mysql">MySQL</option><option value="mssql">SQL Server</option></select></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Host</label><input v-model="cf.host"></div>
+      <div class="field"><label>Port (kosong = default)</label><input type="number" v-model.number="cf.port"></div>
+      <div class="field"><label>{{ cf.db_type==='oracle' ? 'Service name' : 'Database' }}</label><input v-model="cf.database"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>User</label><input v-model="cf.username" autocomplete="off"></div>
+      <div class="field"><label>Password</label><input type="password" v-model="cf.password" autocomplete="new-password" :placeholder="cf.has_password ? '(tidak diubah)' : ''"></div>
+    </div>
+    <div class="field" v-if="cf.db_type==='oracle'"><label>DSN / descriptor penuh (opsional, menggantikan host/port/service)</label><input class="mono" v-model="cf.dsn"></div>
+    <div class="field"><label>Catatan</label><input v-model="cf.note"></div>
+    <label class="check" style="margin-bottom:12px"><input type="checkbox" v-model="cf.allow_write"> Izinkan penulisan (node "Tulis ke database" boleh INSERT / UPDATE ke koneksi ini)</label>
+    <div class="actions"><button class="primary" @click="saveConn" :disabled="busy">Simpan</button><button @click="cf=null">Batal</button></div>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Nama</th><th>Tipe</th><th>Server</th><th>User</th><th></th></tr></thead>
+    <tbody><tr v-for="c in conns" :key="c.id">
+      <td><b>{{ c.name }}</b> <span class="tag" v-if="c.allow_write">boleh tulis</span><div class="muted">{{ c.note }}</div></td><td>{{ c.db_type }}</td>
+      <td class="mono">{{ c.host }}{{ c.port ? ':' + c.port : '' }}{{ c.database ? ' / ' + c.database : '' }}</td><td>{{ c.username }}</td>
+      <td><div class="actions"><button @click="testConn(c)">Tes</button><button @click="cf={...c,password:''}">Ubah</button><button class="danger" @click="deleteConn(c)">Hapus</button></div></td></tr></tbody></table></div>
+</section>
+
+<!-- SMTP -->
+<section v-if="view==='smtp' && sf">
+  <div class="head"><div><h1>Email / SMTP</h1><span class="muted">Pengaturan pengirim berlaku untuk semua job.</span></div></div>
+  <div class="panel">
+    <div class="row">
+      <div class="field"><label>SMTP host</label><input v-model="sf.smtp_host"></div>
+      <div class="field"><label>Port</label><input type="number" v-model.number="sf.smtp_port"></div>
+      <div class="field"><label>Enkripsi</label><select v-model="sf.smtp_security"><option value="none">Tanpa enkripsi</option><option value="starttls">STARTTLS</option><option value="ssl">SSL/TLS</option></select></div>
+      <div class="field"><label>Metode login</label><select v-model="sf.smtp_auth"><option value="login">LOGIN / PLAIN</option><option value="ntlm">NTLM (Exchange domain\user)</option></select></div>
+    </div>
+    <div class="field"><label>Email pengirim (From)</label><input v-model="sf.smtp_sender"></div>
+    <div class="row">
+      <div class="field"><label>User</label><input v-model="sf.smtp_user" autocomplete="off"></div>
+      <div class="field"><label>Password</label><input type="password" v-model="sf.smtp_password" autocomplete="new-password" :placeholder="sf.smtp_password_set ? '(tidak diubah)' : ''"></div>
+    </div>
+    <div class="field" style="max-width:240px"><label>Simpan file hasil (hari)</label><input type="number" min="1" v-model.number="sf.retention_days"></div>
+    <div class="actions"><button class="primary" @click="saveSmtp" :disabled="busy">Simpan</button></div>
+  </div>
+  <div class="panel"><h2>Kirim email uji coba</h2>
+    <div class="row"><div class="field"><input v-model="testTo" placeholder="alamat@tujuan.com"></div><div class="field" style="flex:0"><button @click="testMail" :disabled="!testTo||busy">Kirim</button></div></div>
+    <div class="hint">Simpan pengaturan dulu sebelum menguji.</div></div>
+</section>
+
+<!-- ACCOUNT -->
+<section v-if="view==='account'">
+  <div class="head"><div><h1>Akun</h1></div></div>
+  <form class="panel" style="max-width:420px" @submit.prevent="changePassword">
+    <h2>Ganti password</h2>
+    <div class="field"><label>Password lama</label><input type="password" v-model="pw.old_password" autocomplete="current-password" required></div>
+    <div class="field"><label>Password baru (min. 8 karakter)</label><input type="password" v-model="pw.new_password" autocomplete="new-password" minlength="8" required></div>
+    <button class="primary" :disabled="busy">Simpan</button>
+  </form>
+</section>
+</main>
+</div>
+
+<!-- RUN DIALOG -->
+<div class="overlay" v-if="runDlg" @click.self="runDlg=null"><div class="dialog">
+  <h2>Jalankan “{{ runDlg.job.name }}”</h2>
+  <template v-if="runDlg.job.writes">
+    <div class="msg err" style="margin:12px 0">Job ini menulis ke database.</div>
+    <label class="check" style="margin-bottom:8px"><input type="checkbox" v-model="runDlg.dry_run"> Dry-run: jalankan semua node, tampilkan jumlah baris yang akan berubah, lalu batalkan (rollback). Email tidak dikirim.</label>
+  </template>
+  <div class="row" style="margin-top:12px"><div class="field"><label>Tanggal awal (opsional)</label><input type="date" v-model="runDlg.date_from"></div>
+    <div class="field"><label>Tanggal akhir</label><input type="date" v-model="runDlg.date_to"></div></div>
+  <div class="hint">Kosongkan untuk memakai Rentang data job. Jika diisi, berlaku untuk sqlParam, {tgl_awal}/{tgl_akhir}, {tgl}, dan {hari}.</div>
+  <div class="msg err" style="margin-top:8px" v-if="error">{{ error }}</div>
+  <label class="check" style="margin:12px 0" v-if="!(runDlg.job.writes && runDlg.dry_run)"><input type="checkbox" v-model="runDlg.send_email"> Kirim email ke penerima</label>
+  <div class="actions" style="margin-top:12px"><button class="primary" @click="runJob" :disabled="busy">{{ runDlg.job.writes ? (runDlg.dry_run ? 'Jalankan dry-run' : 'Jalankan & tulis ke database') : 'Jalankan sekarang' }}</button><button @click="runDlg=null">Batal</button></div>
+</div></div>
+
+<!-- RUN DETAIL -->
+<div class="overlay" v-if="runDetail" @click.self="runDetail=null"><div class="dialog" style="width:720px">
+  <h2>{{ runDetail.job_name }} — run #{{ runDetail.id }}</h2>
+  <p><span class="st" :class="runDetail.status">{{ statusText[runDetail.status] }}</span>
+    <span class="tag" v-if="runDetail.dry_run">dry-run</span> <span class="tag" v-if="runDetail.date_from">{{ runDetail.date_from }} s/d {{ runDetail.date_to }}</span><span class="muted"> · {{ fmt(runDetail.started_at) }} · email: {{ runDetail.email_status || '-' }}</span></p>
+  <div class="msg err" v-if="runDetail.error">{{ runDetail.error }}</div>
+  <pre class="log">{{ runDetail.log }}</pre>
+  <div class="actions" style="margin-top:12px">
+    <a v-if="runDetail.has_file" :href="'/api/runs/' + runDetail.id + '/download'"><button>Unduh {{ runDetail.file_name }}</button></a>
+    <button v-if="runDetail.has_file && runDetail.email_status!=='sent'" @click="resend" :disabled="busy">Kirim ulang email</button>
+    <button @click="runDetail=null">Tutup</button></div>
+</div></div>
+
+</div>
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
